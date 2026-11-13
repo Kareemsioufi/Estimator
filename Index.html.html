@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patient Responsibility Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: payer chips on top, inputs left, sticky result card right, service picker and line table below. */
+:root {
+  --bg: #f3f5f7;
+  --surface: #ffffff;
+  --ink: #17212b;
+  --muted: #5b6772;
+  --line: #dbe1e6;
+  --accent: #0f6e7a;
+  --accent-ink: #ffffff;
+  --accent-soft: #e0f0f2;
+  --warn: #8a5a00;
+  --warn-soft: #fdf1d6;
+  --bad: #a33a2b;
+  --bad-soft: #fbe6e2;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11171c;
+    --surface: #1a2229;
+    --ink: #e6ebef;
+    --muted: #9aa7b2;
+    --line: #2c3740;
+    --accent: #4fb6c2;
+    --accent-ink: #08262b;
+    --accent-soft: #17343a;
+    --warn: #f0c46a;
+    --warn-soft: #3a2f14;
+    --bad: #f09a8c;
+    --bad-soft: #3d201b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11171c;
+  --surface: #1a2229;
+  --ink: #e6ebef;
+  --muted: #9aa7b2;
+  --line: #2c3740;
+  --accent: #4fb6c2;
+  --accent-ink: #08262b;
+  --accent-soft: #17343a;
+  --warn: #f0c46a;
+  --warn-soft: #3a2f14;
+  --bad: #f09a8c;
+  --bad-soft: #3d201b;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+}
+.wrap { max-width: 1120px; margin: 0 auto; padding: 24px 16px 48px; }
+h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px; text-wrap: balance; }
+h2 { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+.sub { margin: 0 0 20px; color: var(--muted); max-width: 70ch; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+.grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "payer" "settings" "result" "services";
+}
+@media (min-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-areas: "payer result" "settings result" "services result";
+    align-items: start;
+  }
+  .result { position: sticky; top: 16px; }
+}
+.a-payer { grid-area: payer; }
+.a-settings { grid-area: settings; }
+.a-result { grid-area: result; }
+.a-services { grid-area: services; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 7px 13px; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.fields { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.field label, .field .lbl { display: block; font-weight: 500; margin-bottom: 6px; }
+.hint { color: var(--muted); font-size: 13px; margin-top: 5px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 0; padding: 8px 16px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 500; }
+input[type="number"], input[type="text"] {
+  font-family: var(--font-num); font-size: 15px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; width: 100%;
+}
+.inp-wrap { display: flex; align-items: center; gap: 6px; max-width: 170px; }
+.inp-wrap span { color: var(--muted); }
+.mini-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.mini-chips .chip { padding: 3px 10px; font-size: 13px; }
+
+/* Result */
+.result .big { font-size: 38px; font-weight: 500; line-height: 1.1; margin: 2px 0 2px; }
+.result .big-lbl { color: var(--muted); font-size: 13px; }
+.rows { margin: 14px 0 0; border-top: 1px solid var(--line); }
+.row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.row dt { color: var(--muted); }
+.row dd { margin: 0; }
+.row.pay { font-weight: 600; }
+.notes { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.notes li { font-size: 13px; padding: 8px 10px; border-radius: 6px; background: var(--accent-soft); }
+.notes li.warn { background: var(--warn-soft); color: var(--warn); }
+.notes li.bad { background: var(--bad-soft); color: var(--bad); }
+.btn {
+  font: inherit; cursor: pointer; border-radius: 6px; padding: 8px 14px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+details { margin-top: 12px; }
+summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+pre { white-space: pre-wrap; font-family: var(--font-num); font-size: 12.5px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; margin: 8px 0 0; }
+
+/* Services */
+.groups { display: grid; gap: 16px; }
+.group h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+.codes { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.code {
+  font: inherit; text-align: left; color: var(--ink); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; display: grid; gap: 2px;
+}
+.code:hover { border-color: var(--accent); }
+.code[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+.code .top { display: flex; justify-content: space-between; gap: 8px; }
+.code .cpt { font-family: var(--font-num); font-weight: 500; }
+.code .rate { font-family: var(--font-num); color: var(--muted); font-size: 13px; }
+.code .rate.none { color: var(--bad); }
+.code .d { font-size: 12.5px; color: var(--muted); }
+
+.tbl-wrap { overflow-x: auto; margin-top: 4px; }
+table { width: 100%; border-collapse: collapse; min-width: 640px; }
+th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 600; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+td { padding: 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th.r, td.r { text-align: right; }
+td input { width: 84px; padding: 6px 8px; }
+.pill { display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); margin-left: 6px; }
+.pill.bad { background: var(--bad-soft); color: var(--bad); }
+.x { font: inherit; background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 8px; }
+.x:hover { color: var(--bad); }
+.empty { color: var(--muted); padding: 14px 0; }
+.sec-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.flags { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+.flags li { margin-bottom: 4px; }
+.foot { margin-top: 20px; color: var(--muted); font-size: 13px; max-width: 80ch; }
+@media (prefers-reduced-motion: no-preference) { .chip, .code, .btn { transition: border-color .12s, background .12s; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Patient Responsibility Calculator</h1>
+  <p class="sub">In-network estimate from your contracted fee schedules. Pick the payer, set the deductible and coinsurance, then choose the codes billed. The example below is preloaded; clear it to start fresh.</p>
+
+  <div class="grid">
+    <section class="card a-payer" aria-labelledby="payer-h">
+      <h2 id="payer-h">Payer</h2>
+      <div class="chips" id="payerChips" role="group" aria-label="Payer"></div>
+    </section>
+
+    <section class="card a-settings" aria-labelledby="set-h">
+      <h2 id="set-h">Benefits</h2>
+      <div class="fields">
+        <div class="field">
+          <span class="lbl" id="dedLbl">Deductible</span>
+          <div class="seg" role="group" aria-labelledby="dedLbl">
+            <button type="button" id="dedMet" aria-pressed="true">Met</button>
+            <button type="button" id="dedNot" aria-pressed="false">Not met</button>
+          </div>
+          <div id="dedRemainBox" hidden style="margin-top:10px">
+            <label for="dedRemain">Remaining deductible</label>
+            <div class="inp-wrap"><span>$</span><input type="number" id="dedRemain" min="0" step="0.01" inputmode="decimal" placeholder="blank = all"></div>
+            <div class="hint" id="dedHint">Blank assumes the whole allowed amount goes to the deductible.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="coins">Coinsurance</label>
+          <div class="inp-wrap"><input type="number" id="coins" min="0" max="100" step="1" inputmode="decimal" value="20"><span>%</span></div>
+          <div class="mini-chips" id="coinsChips"></div>
+        </div>
+        <div class="field">
+          <label for="oop">Remaining out-of-pocket max <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+          <div class="inp-wrap"><span>$</span><input type="number" id="oop" min="0" step="0.01" inputmode="decimal" placeholder="none"></div>
+          <div class="hint">Caps what the patient owes.</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="card result a-result" aria-live="polite" aria-labelledby="res-h">
+      <h2 id="res-h">Patient estimate</h2>
+      <div class="big-lbl">Patient owes</div>
+      <div class="big num" id="owe">$0.00</div>
+      <dl class="rows" id="rows"></dl>
+      <ul class="notes" id="notes"></ul>
+      <div class="actions">
+        <button type="button" class="btn primary" id="copyBtn">Copy summary</button>
+        <button type="button" class="btn" id="clearBtn">Clear codes</button>
+      </div>
+      <details id="sumDetails"><summary>Summary text</summary><pre id="sumText"></pre></details>
+    </aside>
+
+    <section class="card a-services" aria-labelledby="svc-h">
+      <div class="sec-head"><h2 id="svc-h" style="margin:0">Services</h2><span class="hint" style="margin:0" id="rateNote"></span></div>
+      <div class="groups" id="groups"></div>
+      <h2 style="margin-top:20px">Lines</h2>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Code</th><th class="r">Units</th><th class="r">Rate / unit</th><th class="r">Override / unit</th><th class="r">Allowed</th><th class="r">Patient</th><th></th></tr></thead>
+          <tbody id="lines"></tbody>
+        </table>
+      </div>
+      <div id="flagBox" style="margin-top:16px" hidden>
+        <h2>Fee schedule notes for this payer</h2>
+        <ul class="flags" id="flagList"></ul>
+      </div>
+    </section>
+  </div>
+  <p class="foot">Estimate only. Coinsurance is applied to the allowed amount after any remaining deductible, then capped by the out-of-pocket max if entered. Plans with office visit copays, deductible waivers, or Medicaid and Tricare cost-shares can differ; the remittance (PR-1, PR-2, PR-3) gives the final amounts. Out-of-network: enter the plan's allowed amount in the override column.</p>
+</div>
+
+<script>
+const PAYERS = [{"id":"AETNA_COMMERCIAL","name":"Aetna Commercial","fees":{"67145|":1145.74,"67228|":2200.46,"67028|":222.71,"67210|":1133.24,"92004|":317.35,"92012|":182.79,"92014|":264.74,"99204|":328.18,"99214|":213.13,"99213|":144.48,"99212|":86.46,"92134|":97.02,"92134|26":63.03,"92250|":166.72,"92250|26":51.08,"92250|TC":115.64,"92235|":232.93,"92235|26":101.39,"76512|":19951.0,"76512|26":115.62,"92201|":0.0,"92202|":0.0,"J9035|":101.02,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":1064.75}},{"id":"AETNA_FIRST_HEALTH","name":"Aetna First Health","fees":{"67145|":738.26,"67228|":170.29,"67028|":300.65,"67210|":988.33,"92004|":208.58,"92012|":117.64,"92014|":171.64,"99204|":206.87,"99214|":134.47,"99213|":89.65,"99212|":53.2,"92134|":0.0,"92134|26":0.0,"92250|":106.28,"92250|26":35.8,"92250|TC":70.47,"92235|":187.55,"92235|26":68.2,"76512|":139.81,"76512|26":79.57,"92201|":0.0,"92202|":0.0,"J9035|":0.0,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":0.0}},{"id":"AETNA_MCR_ADVANTAGE","name":"Aetna Medicare Advantage","fees":{"67145|":249.59,"67228|":346.78,"67028|":116.13,"67210|":525.99,"92004|":151.49,"92012|":91.75,"92014|":128.92,"99204|":180.55,"99214|":137.81,"99213|":96.71,"99212|":60.47,"92134|":33.25,"92134|26":17.91,"92250|":37.62,"92250|26":20.59,"92250|TC":17.03,"92235|":164.73,"92235|26":42.16,"76512|":49.43,"76512|26":30.7,"92201|":0.0,"92202|":0.0,"J9035|":73.63,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":763.9}},{"id":"ALLIANT","name":"Alliant","fees":{"67145|":310.37,"67228|":436.24,"67028|":145.87,"67210|":659.85,"92004|":189.59,"92012|":113.89,"92014|":160.7,"99204|":229.49,"99214|":174.54,"99213|":122.18,"99212|":75.82,"92134|":41.2,"92134|26":null,"92250|":46.82,"92250|26":null,"92250|TC":null,"92235|":199.3,"92235|26":null,"76512|":61.67,"76512|26":null,"92201|":32.33,"92202|":20.26,"J9035|":83.04,"J3590|":34.45,"J2777|":148.8,"J2781|":110.62,"J0177|":319.99,"J0178|":794.48}},{"id":"BCBS_EXCHANGE","name":"BCBS (Anthem) Exchange","fees":{"67145|":608.82,"67228|":393.94,"67028|":117.68,"67210|":598.58,"92004|":169.66,"92012|":97.0,"92014|":141.95,"99204|":197.77,"99214|":128.85,"99213|":87.48,"99212|":52.5,"92134|":51.8,"92134|26":33.01,"92250|":89.87,"92250|26":27.29,"92250|TC":62.58,"92235|":126.62,"92235|26":54.22,"76512|":106.96,"76512|26":61.16,"92201|":0.0,"92202|":0.0,"J9035|":74.16,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":841.13}},{"id":"BCBS_MCR_ADV","name":"BCBS (Anthem) Medicare Advantage","fees":{"67145|":249.59,"67228|":346.78,"67028|":116.13,"67210|":585.99,"92004|":151.49,"92012|":91.75,"92014|":128.92,"99204|":189.58,"99214|":90.18,"99213|":101.54,"99212|":63.5,"92134|":33.25,"92134|26":17.91,"92250|":37.62,"92250|26":20.59,"92250|TC":17.03,"92235|":164.73,"92235|26":42.16,"76512|":49.43,"76512|26":30.7,"92201|":0.0,"92202|":0.0,"J9035|":73.63,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":763.9}},{"id":"BCBS_POS_HMO_HPN","name":"BCBS (Anthem) POS / HMO / HPN","fees":{"67145|":832.51,"67228|":538.69,"67028|":160.91,"67210|":818.51,"92004|":232.0,"92012|":133.88,"92014|":194.1,"99204|":258.16,"99214|":168.2,"99213|":114.1,"99212|":68.54,"92134|":70.84,"92134|26":45.14,"92250|":122.89,"92250|26":37.72,"92250|TC":85.57,"92235|":173.14,"92235|26":75.15,"76512|":146.26,"76512|26":83.63,"92201|":0.0,"92202|":0.0,"J9035|":74.16,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":841.13}},{"id":"CIGNA_FS_COMMERCIAL","name":"Cigna Commercial","fees":{"67145|":548.84,"67228|":1044.17,"67028|":105.62,"67210|":542.08,"92004|":152.6,"92012|":88.19,"92014|":127.27,"99204|":165.55,"99214|":107.55,"99213|":73.32,"99212|":44.25,"92134|":46.65,"92134|26":null,"92250|":82.3,"92250|26":null,"92250|TC":null,"92235|":114.55,"92235|26":null,"76512|":96.86,"76512|26":null,"92201|":24.3,"92202|":15.4,"J9035|":75.49,"J3590|":31.32,"J2777|":135.27,"J2781|":100.56,"J0177|":290.9,"J0178|":722.25}},{"id":"GA_MEDICAID","name":"Georgia Medicaid","fees":{"67145|":369.09,"67228|":734.31,"67028|":275.05,"67210|":558.68,"92004|":99.76,"92012|":46.16,"92014|":73.22,"99204|":110.51,"99214|":115.71,"99213|":82.05,"99212|":29.67,"92134|":37.77,"92134|26":0.0,"92250|":52.76,"92250|26":0.0,"92250|TC":0.0,"92235|":89.77,"92235|26":0.0,"76512|":83.77,"76512|26":0.0,"92201|":21.67,"92202|":13.74,"J9035|":75.49,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":722.25}},{"id":"HUMANA_MCR_ADVANTAGE","name":"Humana Medicare Advantage","fees":{"67145|":249.59,"67228|":346.78,"67028|":116.13,"67210|":525.99,"92004|":151.49,"92012|":91.75,"92014|":128.92,"99204|":180.55,"99214|":137.81,"99213|":96.71,"99212|":60.47,"92134|":33.25,"92134|26":17.91,"92250|":17.03,"92250|26":20.59,"92250|TC":17.03,"92235|":164.73,"92235|26":42.16,"76512|":49.43,"76512|26":30.7,"92201|":0.0,"92202|":0.0,"J9035|":73.63,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":763.9}},{"id":"OSCAR_HMO_OA","name":"Oscar HMO / Open Access","fees":{"67145|":372.27,"67228|":519.83,"67028|":173.98,"67210|":788.59,"92004|":227.39,"92012|":135.83,"92014|":192.43,"99204|":261.19,"99214|":199.92,"99213|":142.01,"99212|":87.69,"92134|":49.96,"92134|26":27.32,"92250|":25.21,"92250|26":31.43,"92250|TC":25.21,"92235|":242.48,"92235|26":64.33,"76512|":58.89,"76512|26":37.07,"92201|":0.0,"92202|":0.0,"J9035|":89.29,"J3590|":null,"J2777|":null,"J2781|":null,"J0177|":null,"J0178|":977.33}},{"id":"TRICARE_EAST","name":"Tricare East","fees":{"67145|":215.22,"67228|":300.53,"67028|":100.58,"67210|":455.91,"92004|":131.46,"92012|":78.52,"92014|":11.25,"99204|":160.85,"99214|":123.12,"99213|":87.45,"99212|":54.0,"92134|":0.0,"92134|26":0.0,"92250|":0.0,"92250|26":0.0,"92250|TC":0.0,"92235|":0.0,"92235|26":0.0,"76512|":0.0,"76512|26":0.0,"92201|":0.0,"92202|":0.0,"J9035|":0.0,"J3590|":0.0,"J2777|":0.0,"J2781|":0.0,"J0177|":0.0,"J0178|":0.0}}];
+
+const CODES = [
+  { g: "Exams and visits", code: "92004", mod: "", d: "New patient comprehensive eye exam" },
+  { g: "Exams and visits", code: "92012", mod: "", d: "Established intermediate eye exam" },
+  { g: "Exams and visits", code: "92014", mod: "", d: "Established comprehensive eye exam" },
+  { g: "Exams and visits", code: "99204", mod: "", d: "New patient E/M, level 4" },
+  { g: "Exams and visits", code: "99214", mod: "", d: "Established E/M, level 4" },
+  { g: "Exams and visits", code: "99213", mod: "", d: "Established E/M, level 3" },
+  { g: "Exams and visits", code: "99212", mod: "", d: "Established E/M, level 2" },
+  { g: "Diagnostic testing", code: "92134", mod: "", d: "OCT retina, global" },
+  { g: "Diagnostic testing", code: "92134", mod: "26", d: "OCT retina, professional" },
+  { g: "Diagnostic testing", code: "92250", mod: "", d: "Fundus photography, global" },
+  { g: "Diagnostic testing", code: "92250", mod: "26", d: "Fundus photography, professional" },
+  { g: "Diagnostic testing", code: "92250", mod: "TC", d: "Fundus photography, technical" },
+  { g: "Diagnostic testing", code: "92235", mod: "", d: "Fluorescein angiography, global" },
+  { g: "Diagnostic testing", code: "92235", mod: "26", d: "Fluorescein angiography, professional" },
+  { g: "Diagnostic testing", code: "76512", mod: "", d: "Ophthalmic B-scan, global" },
+  { g: "Diagnostic testing", code: "76512", mod: "26", d: "Ophthalmic B-scan, professional" },
+  { g: "Diagnostic testing", code: "92201", mod: "", d: "Extended ophthalmoscopy, peripheral retina" },
+  { g: "Diagnostic testing", code: "92202", mod: "", d: "Extended ophthalmoscopy, optic nerve or macula" },
+  { g: "Procedures", code: "67028", mod: "", d: "Intravitreal injection" },
+  { g: "Procedures", code: "67145", mod: "", d: "Retinal detachment prophylaxis, laser" },
+  { g: "Procedures", code: "67210", mod: "", d: "Retinal lesion destruction, photocoagulation" },
+  { g: "Procedures", code: "67228", mod: "", d: "Photocoagulation, extensive retinopathy" },
+  { g: "Drugs (rate is per billing unit)", code: "J0177", mod: "", d: "Aflibercept HD, per 1 mg", u: 8 },
+  { g: "Drugs (rate is per billing unit)", code: "J0178", mod: "", d: "Aflibercept, per 1 mg", u: 2 },
+  { g: "Drugs (rate is per billing unit)", code: "J2777", mod: "", d: "Faricimab, per 0.1 mg", u: 60 },
+  { g: "Drugs (rate is per billing unit)", code: "J2781", mod: "", d: "Pegcetacoplan, per 1 mg", u: 15 },
+  { g: "Drugs (rate is per billing unit)", code: "J9035", mod: "", d: "Bevacizumab, per 10 mg", u: 1 },
+  { g: "Drugs (rate is per billing unit)", code: "J3590", mod: "", d: "Unclassified biologic", u: 1 }
+];
+CODES.forEach(c => { c.key = c.code + "|" + c.mod; c.label = c.code + (c.mod ? "-" + c.mod : ""); });
+const CODE_BY_KEY = Object.fromEntries(CODES.map(c => [c.key, c]));
+
+const FLAGS = {
+  "AETNA_COMMERCIAL|76512|": "76512 is $19,951.00. This is probably a typo for $199.51.",
+  "TRICARE_EAST|92014|": "92014 is $11.25, far below the other Tricare visit rates. A digit may be missing.",
+  "HUMANA_MCR_ADVANTAGE|92250|": "92250 global ($17.03) equals the technical component. Other Medicare Advantage schedules show about $37.62.",
+  "OSCAR_HMO_OA|92250|": "92250 global ($25.21) equals the technical component and is below the -26 rate ($31.43).",
+  "BCBS_MCR_ADV|99214|": "99214 ($90.18) is lower than 99213 ($101.54).",
+  "ALLIANT|J2777|": "J2777 is billed per 0.1 mg. At 60 units this is $8,928.00. Check the unit basis.",
+  "CIGNA_FS_COMMERCIAL|J2777|": "J2777 is billed per 0.1 mg. At 60 units this is $8,116.20. Check the unit basis."
+};
+
+//<calc>
+function round2(n) { return Math.round((n + Number.EPSILON) * 100) / 100; }
+function toNum(v) { const n = parseFloat(v); return isFinite(n) ? n : null; }
+
+function rateFor(fees, line) {
+  const ov = toNum(line.override);
+  if (ov !== null && ov >= 0) return { rate: ov, source: "override" };
+  const f = fees ? fees[line.key] : null;
+  if (typeof f === "number" && f > 0) return { rate: f, source: "schedule" };
+  return { rate: null, source: "none" };
+}
+
+function calc(fees, s) {
+  const pct = Math.min(100, Math.max(0, toNum(s.coins) ?? 0)) / 100;
+  let dedLeft;
+  let dedAssumed = false;
+  if (s.dedMet) dedLeft = 0;
+  else {
+    const r = toNum(s.dedRemain);
+    if (r === null) { dedLeft = Infinity; dedAssumed = true; }
+    else dedLeft = Math.max(0, r);
+  }
+  const out = { lines: [], missing: [], dedAssumed };
+  let allowed = 0, ded = 0, coins = 0;
+  const raw = [];
+  for (const line of s.lines) {
+    const units = Math.max(0, Math.floor(toNum(line.units) ?? 0));
+    const r = rateFor(fees, line);
+    if (r.rate === null) { out.missing.push(line.key); raw.push(null); out.lines.push({ key: line.key, rate: null, source: r.source, units, allowed: 0, patient: 0 }); continue; }
+    const a = r.rate * units;
+    const d = Math.min(dedLeft, a);
+    dedLeft -= d;
+    const c = pct * (a - d);
+    allowed += a; ded += d; coins += c;
+    raw.push({ a, d, c });
+    out.lines.push({ key: line.key, rate: r.rate, source: r.source, units, allowed: a, patient: d + c });
+  }
+  let pre = ded + coins;
+  let scale = 1, capped = false;
+  const oop = toNum(s.oop);
+  if (oop !== null && pre > Math.max(0, oop)) { scale = pre > 0 ? Math.max(0, oop) / pre : 1; capped = true; }
+  // cumulative rounding so line shares add up to the total exactly
+  let cum = 0, prevR = 0, cumAllowed = 0, prevA = 0;
+  out.lines.forEach((ln, i) => {
+    const rw = raw[i];
+    if (!rw) return;
+    cum += (rw.d + rw.c) * scale;
+    const rr = round2(cum);
+    ln.patient = round2(rr - prevR); prevR = rr;
+    cumAllowed += rw.a;
+    const ra = round2(cumAllowed);
+    ln.allowed = round2(ra - prevA); prevA = ra;
+  });
+  const patient = round2(pre * scale);
+  const dedC = Math.round(ded * 100), preC = Math.round(pre * 100), patC = Math.round(patient * 100);
+  out.allowed = round2(allowed);
+  out.ded = dedC / 100;
+  out.coins = (preC - dedC) / 100;
+  out.capAdj = (patC - preC) / 100;
+  out.patient = patient;
+  out.payer = round2(out.allowed - patient);
+  out.capped = capped;
+  out.pct = pct;
+  return out;
+}
+//</calc>
+
+const $ = id => document.getElementById(id);
+const fmt = n => (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const state = {
+  payer: "BCBS_POS_HMO_HPN",
+  dedMet: true,
+  dedRemain: "",
+  coins: "20",
+  oop: "",
+  lines: [
+    { key: "92004|", units: 1, override: "" },
+    { key: "92134|", units: 1, override: "" }
+  ]
+};
+const payerById = () => PAYERS.find(p => p.id === state.payer);
+
+function flagFor(key) { return FLAGS[state.payer + "|" + key] || null; }
+function esc(s) { return String(s).replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+
+function renderPayers() {
+  $("payerChips").innerHTML = PAYERS.map(p =>
+    `<button type="button" class="chip" data-id="${p.id}" aria-pressed="${p.id === state.payer}">${esc(p.name)}</button>`).join("");
+}
+function renderCoinsChips() {
+  $("coinsChips").innerHTML = [10, 15, 20, 30, 40, 50].map(v =>
+    `<button type="button" class="chip" data-v="${v}" aria-pressed="${String(v) === String(state.coins)}">${v}%</button>`).join("");
+}
+
+function renderGroups() {
+  const fees = payerById().fees;
+  const groups = [];
+  CODES.forEach(c => { let g = groups.find(x => x.name === c.g); if (!g) { g = { name: c.g, items: [] }; groups.push(g); } g.items.push(c); });
+  $("groups").innerHTML = groups.map(g => `
+    <div class="group"><h3>${esc(g.name)}</h3><div class="codes">` +
+    g.items.map(c => {
+      const f = fees[c.key];
+      const has = typeof f === "number" && f > 0;
+      const on = state.lines.some(l => l.key === c.key);
+      return `<button type="button" class="code" data-key="${c.key}" aria-pressed="${on}">
+        <span class="top"><span class="cpt">${c.label}</span><span class="rate ${has ? "" : "none"}">${has ? fmt(f) : "no rate"}</span></span>
+        <span class="d">${esc(c.d)}</span></button>`;
+    }).join("") + `</div></div>`).join("");
+  $("rateNote").textContent = "Rates shown are " + payerById().name + " in-network allowed amounts.";
+}
+
+function renderFlags() {
+  const keys = Object.keys(FLAGS).filter(k => k.startsWith(state.payer + "|"));
+  $("flagBox").hidden = keys.length === 0;
+  $("flagList").innerHTML = keys.map(k => {
+    const ck = k.split("|").slice(1).join("|");
+    const c = CODE_BY_KEY[ck];
+    return `<li><strong>${c ? c.label : ck}</strong>: ${esc(FLAGS[k])}</li>`;
+  }).join("");
+}
+
+function renderAll() {
+  const p = payerById();
+  const res = calc(p.fees, state);
+
+  $("dedMet").setAttribute("aria-pressed", state.dedMet);
+  $("dedNot").setAttribute("aria-pressed", !state.dedMet);
+  $("dedRemainBox").hidden = state.dedMet;
+
+  // lines table
+  if (state.lines.length === 0) {
+    $("lines").innerHTML = `<tr><td colspan="7" class="empty">No codes selected. Pick codes above.</td></tr>`;
+  } else {
+    $("lines").innerHTML = state.lines.map((l, i) => {
+      const c = CODE_BY_KEY[l.key], r = res.lines[i], fl = flagFor(l.key);
+      const rateTxt = r.rate === null ? `<span class="pill bad">no rate</span>` : fmt(r.rate) + (r.source === "override" ? "" : "");
+      return `<tr>
+        <td><span class="num">${c.label}</span>${fl ? `<span class="pill" title="${esc(fl)}">check rate</span>` : ""}<div class="hint" style="margin:0">${esc(c.d)}</div></td>
+        <td class="r"><input type="number" min="0" step="1" inputmode="numeric" data-i="${i}" data-f="units" value="${l.units}" aria-label="Units for ${c.label}"></td>
+        <td class="r num">${rateTxt}</td>
+        <td class="r"><input type="number" min="0" step="0.01" inputmode="decimal" data-i="${i}" data-f="override" value="${esc(l.override)}" placeholder="auto" aria-label="Override rate per unit for ${c.label}"></td>
+        <td class="r num">${r.rate === null ? "-" : fmt(r.allowed)}</td>
+        <td class="r num">${r.rate === null ? "-" : fmt(r.patient)}</td>
+        <td class="r"><button type="button" class="x" data-rm="${i}" aria-label="Remove ${c.label}">&times;</button></td></tr>`;
+    }).join("");
+  }
+
+  // result
+  $("owe").textContent = fmt(res.patient);
+  const rows = [
+    ["Allowed total", fmt(res.allowed), ""],
+    ["Deductible portion", fmt(res.ded), ""],
+    ["Coinsurance (" + Math.round(res.pct * 1000) / 10 + "%)", fmt(res.coins), ""]
+  ];
+  if (res.capped) rows.push(["Out-of-pocket max adjustment", fmt(res.capAdj), ""]);
+  rows.push(["Payer pays", fmt(res.payer), "pay"]);
+  $("rows").innerHTML = rows.map(r => `<div class="row ${r[2]}"><dt>${r[0]}</dt><dd class="num">${r[1]}</dd></div>`).join("");
+
+  const notes = [];
+  if (res.missing.length) notes.push(["bad", "No rate on this schedule for " + res.missing.map(k => CODE_BY_KEY[k].label).join(", ") + ". Those lines are left out. Enter an override rate to include them."]);
+  if (!state.dedMet && res.dedAssumed) notes.push(["warn", "Remaining deductible left blank, so the full allowed amount is treated as deductible. Enter the remaining amount for a closer estimate."]);
+  if (res.capped) notes.push(["", "The out-of-pocket max limits the patient amount."]);
+  if (state.lines.some(l => flagFor(l.key))) notes.push(["warn", "One or more rates on this schedule look unusual. See the notes under Services."]);
+  if (state.lines.some(l => toNum(l.override) !== null)) notes.push(["", "Override rates replace the fee schedule on those lines."]);
+  if (state.lines.length === 0) notes.push(["", "Select codes to see the estimate."]);
+  $("notes").innerHTML = notes.map(n => `<li class="${n[0]}">${esc(n[1])}</li>`).join("");
+
+  // summary text
+  const lines = [];
+  lines.push("Patient estimate (" + p.name + ", in network)");
+  state.lines.forEach((l, i) => {
+    const c = CODE_BY_KEY[l.key], r = res.lines[i];
+    lines.push(c.label + " x" + r.units + (r.rate === null ? "  no rate" : "  allowed " + fmt(r.allowed) + "  patient " + fmt(r.patient)));
+  });
+  lines.push("Allowed total: " + fmt(res.allowed));
+  lines.push("Deductible: " + (state.dedMet ? "met" : (res.dedAssumed ? "not met, amount unknown" : "not met, " + fmt(toNum(state.dedRemain)) + " remaining")) + "  portion " + fmt(res.ded));
+  lines.push("Coinsurance " + Math.round(res.pct * 1000) / 10 + "%: " + fmt(res.coins));
+  if (res.capped) lines.push("Out-of-pocket max adjustment: " + fmt(res.capAdj));
+  lines.push("Patient owes: " + fmt(res.patient));
+  lines.push("Payer pays: " + fmt(res.payer));
+  $("sumText").textContent = lines.join("\n");
+
+  renderGroups();
+  renderFlags();
+  renderCoinsChips();
+}
+
+// Events
+$("payerChips").addEventListener("click", e => {
+  const b = e.target.closest("[data-id]"); if (!b) return;
+  state.payer = b.dataset.id; renderPayers(); renderAll();
+});
+$("dedMet").addEventListener("click", () => { state.dedMet = true; renderAll(); });
+$("dedNot").addEventListener("click", () => { state.dedMet = false; renderAll(); });
+$("dedRemain").addEventListener("input", e => { state.dedRemain = e.target.value; renderAllKeepFocus(e.target); });
+$("coins").addEventListener("input", e => { state.coins = e.target.value; renderAllKeepFocus(e.target); });
+$("oop").addEventListener("input", e => { state.oop = e.target.value; renderAllKeepFocus(e.target); });
+$("coinsChips").addEventListener("click", e => {
+  const b = e.target.closest("[data-v]"); if (!b) return;
+  state.coins = b.dataset.v; $("coins").value = state.coins; renderAll();
+});
+$("groups").addEventListener("click", e => {
+  const b = e.target.closest("[data-key]"); if (!b) return;
+  const key = b.dataset.key;
+  const idx = state.lines.findIndex(l => l.key === key);
+  if (idx >= 0) state.lines.splice(idx, 1);
+  else state.lines.push({ key, units: CODE_BY_KEY[key].u || 1, override: "" });
+  renderAll();
+});
+$("lines").addEventListener("input", e => {
+  const t = e.target; if (!t.dataset || t.dataset.i === undefined) return;
+  state.lines[+t.dataset.i][t.dataset.f] = t.value;
+  renderAllKeepFocus(t);
+});
+$("lines").addEventListener("click", e => {
+  const b = e.target.closest("[data-rm]"); if (!b) return;
+  state.lines.splice(+b.dataset.rm, 1); renderAll();
+});
+$("clearBtn").addEventListener("click", () => { state.lines = []; renderAll(); });
+$("copyBtn").addEventListener("click", async () => {
+  const btn = $("copyBtn"), txt = $("sumText").textContent;
+  try { await navigator.clipboard.writeText(txt); btn.textContent = "Copied"; }
+  catch (err) { btn.textContent = "Copy blocked"; $("sumDetails").open = true; }
+  setTimeout(() => { btn.textContent = "Copy summary"; }, 1800);
+});
+
+// Re-render while typing without losing the caret in the active input
+function renderAllKeepFocus(el) {
+  const id = el.id, i = el.dataset ? el.dataset.i : undefined, f = el.dataset ? el.dataset.f : undefined;
+  const pos = el.selectionStart;
+  renderAll();
+  let next = id ? $(id) : document.querySelector(`input[data-i="${i}"][data-f="${f}"]`);
+  if (next) { next.focus(); try { next.setSelectionRange(pos, pos); } catch (e) {} }
+}
+
+renderPayers();
+renderAll();
+</script>
+</body>
+</html>
